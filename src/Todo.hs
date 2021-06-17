@@ -16,7 +16,7 @@
 module Todo (todo, todoApp) where
 
 -- base
-import Control.Monad (replicateM, when)
+import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (for_)
 
@@ -28,9 +28,6 @@ import qualified Text.Blaze.Html5.Attributes as A
 -- blaze-markup
 import Text.Blaze.Internal (attribute)
 
--- http-types
-import Network.HTTP.Types (status404)
-
 -- persistent
 import qualified Database.Persist.Sql as P
 
@@ -41,16 +38,11 @@ import Database.Persist.Sqlite (runMigration, runSqlite)
 import Database.Persist.TH
   (mkMigrate, mkPersist, persistLowerCase, share, sqlSettings)
 
--- random
-import System.Random (randomRIO)
-
 -- scotty
 import Web.Scotty
 
 -- text
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
 
 -- time
 import Data.Time (UTCTime, getCurrentTime)
