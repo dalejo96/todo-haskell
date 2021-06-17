@@ -16,7 +16,7 @@
 module Todo (todo, todoApp) where
 
 -- base
-import Control.Monad (replicateM, when)
+import Control.Monad (when)
 import Control.Monad.IO.Class (MonadIO(liftIO))
 import Data.Foldable (for_)
 
@@ -28,9 +28,6 @@ import qualified Text.Blaze.Html5.Attributes as A
 -- blaze-markup
 import Text.Blaze.Internal (attribute)
 
--- http-types
-import Network.HTTP.Types (status404)
-
 -- persistent
 import qualified Database.Persist.Sql as P
 
@@ -41,16 +38,11 @@ import Database.Persist.Sqlite (runMigration, runSqlite)
 import Database.Persist.TH
   (mkMigrate, mkPersist, persistLowerCase, share, sqlSettings)
 
--- random
-import System.Random (randomRIO)
-
 -- scotty
 import Web.Scotty
 
 -- text
 import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as LT
 
 -- time
 import Data.Time (UTCTime, getCurrentTime)
@@ -59,13 +51,12 @@ import Data.Time (UTCTime, getCurrentTime)
 import Network.Wai (Application)
 
 share [mkPersist sqlSettings, mkMigrate "migrate"] [persistLowerCase|
-Url
-  long Text
-  short Text
+Todos
+  title Text
+  description Text
   clicks Int
   createdAt UTCTime
   updatedAt UTCTime Maybe
-  UniqueUrlShort short
   deriving Show
 |]
 
@@ -82,7 +73,7 @@ todoApp connectionString = do
 todoScottyApp :: Text -> ScottyM ()
 todoScottyApp connectionString = do
   get "/" $ do
-    urls <- runDB $ P.selectList [] [P.Asc UrlId]
+    items <- runDB $ P.selectList [] [P.Asc TodosId]
     html $ renderHtml $
       H.html $ do
         H.head $ do
@@ -93,74 +84,63 @@ todoScottyApp connectionString = do
             H.h1 "To-Do List"
           H.form H.! A.action "/" H.! A.method "post" $ do
             H.div H.! A.class_ "row mb-3" $ do
-              H.label H.! A.class_ "visually-hidden" H.! A.for "url" $
-                H.text "URL"
+              H.label H.! A.for "title" $
+                H.text "Title"
               H.div $
                 H.input
                   H.! A.class_ "form-control"
-                  H.! A.id "url"
-                  H.! A.name "url"
+                  H.! A.id "title"
+                  H.! A.name "title"
+                  H.! A.required "required"
+                  H.! A.placeholder "Insert your title here"
+                  H.! A.type_ "text"
+            H.div H.! A.class_ "row mb-3" $ do
+              H.label H.! A.for "description" $
+                H.text "Description"
+              H.div $
+                H.input
+                  H.! A.class_ "form-control"
+                  H.! A.id "description"
+                  H.! A.name "description"
+                  H.! A.placeholder "Insert your description here"
                   H.! A.required "required"
                   H.! A.type_ "text"
             H.div $
               H.button H.! A.class_ "btn btn-primary" H.! A.type_ "submit" $
-                H.text "To-Do"
+                H.text "Add To-Do item"
           H.div H.! A.class_ "table-responsive" $
             H.table H.! A.class_ "table table-bordered table-striped" $ do
               H.thead $
                 H.tr $ do
                   H.th (H.text "ID")
-                  H.th (H.text "URL (Short)")
-                  H.th (H.text "URL (Long)")
-                  H.th (H.text "Clicks")
+                  H.th (H.text "Title")
+                  H.th (H.text "Description")
               H.tbody $ do
-                when (null urls) $
+                when (null items) $
                   H.tr $
                     H.td H.! A.colspan "4" $
                       H.text "..."
-                for_ urls $ \(P.Entity urlId url) ->
+                for_ items $ \(P.Entity itemId item) ->
                   H.tr $ do
-                    H.td (H.toHtml (P.fromSqlKey urlId))
-                    H.td $
-                      H.a
-                        H.! A.href (H.textValue (urlShort url))
-                        H.! A.target "todo" $
-                          H.text (urlShort url)
-                    H.td (H.text (urlLong url))
-                    H.td (H.text (T.pack (show (urlClicks url))))
+                    H.td (H.toHtml (P.fromSqlKey itemId))
+                    H.td (H.text (todosTitle item))
+                    H.td (H.text (todosDescription item))
   post "/" $ do
-    long <- param "url"
-    short <- generateShortUrl
+    title <- param "title"
+    description <- param "description"
     now <- liftIO getCurrentTime
-    runDB $ P.insert_ Url
-      { urlShort = short
-      , urlLong = long
-      , urlClicks = 0
-      , urlCreatedAt = now
-      , urlUpdatedAt = Nothing
+    runDB $ P.insert_ Todos
+      { todosTitle = title
+      , todosDescription = description
+      , todosClicks = 0
+      , todosCreatedAt = now
+      , todosUpdatedAt = Nothing
       }
     redirect "/"
-  get "/:short" $ do
-    short <- param "short"
-    mUrl <- runDB $ P.getBy (UniqueUrlShort short)
-    case mUrl of
-      Just (P.Entity urlId Url { urlLong }) -> do
-        now <- liftIO getCurrentTime
-        runDB $ P.update urlId
-          [ UrlClicks P.+=. 1
-          , UrlUpdatedAt P.=. Just now
-          ]
-        redirect (LT.fromStrict urlLong)
-      Nothing ->
-        raiseStatus status404 ""
-  where
+   where
     runDB :: P.SqlPersistM a -> ActionM a
     runDB =
       liftIO . runSqlite connectionString
-
-generateShortUrl :: MonadIO m => m Text
-generateShortUrl =
-  T.pack <$> replicateM 6 (randomRIO ('a', 'z'))
 
 bootstrapCss :: H.Html
 bootstrapCss =
